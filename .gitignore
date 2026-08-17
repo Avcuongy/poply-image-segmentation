@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# test
+*test.*
+test/
+
+# data
+data/
+*.csv
+*.json
+*.parquet
+*.db
+*.duckdb
+*.duckdb.wal
+*.sqlite3
+*.cache*.sqlite
