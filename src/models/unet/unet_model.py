@@ -7,14 +7,15 @@ from .unet_parts import Up, OutConv
 
 class UNet(nn.Module):
     """
-    U-Net with configurable encoder backbone.
+    U-Net with ResNet encoder backbone.
 
-    Example:
-        UNet(
+    Ví dụ:
+        model = UNet(
             backbone="resnet34",
             n_classes=3,
-            pretrained=True
+            pretrained=True,
         )
+        logits = model(images)  # (B, n_classes, H, W)
     """
 
     def __init__(
@@ -68,31 +69,30 @@ class UNet(nn.Module):
             bilinear=bilinear,
         )
 
-        # ResNet conv1 gives H/2,
-        # so one more upsampling is needed to recover H x W.
-        self.final_up = nn.Sequential(
-            nn.ConvTranspose2d(
-                64,
-                32,
-                kernel_size=2,
-                stride=2,
-            ),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-        )
+        # ResNet conv1 for 7x7 kernel with stride=2, so we need to upsample the final output
+        # ResNet conv1 output channels = 64, we want to reduce it to 32 channels before the final segmentation head
+        if bilinear:
+            self.final_up = nn.Sequential(
+                nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True),
+                nn.Conv2d(64, 32, kernel_size=1),
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),
+            )
+        else:
+            self.final_up = nn.Sequential(
+                nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2),
+                nn.BatchNorm2d(32),
+                nn.ReLU(inplace=True),
+            )
 
         # Segmentation head
-        self.outc = OutConv(
-            32,
-            n_classes,
-        )
+        self.outc = OutConv(32, n_classes)
 
     def forward(self, x, return_features=False):
         input_size = x.shape[-2:]
 
         # Encoder
         features = self.encoder(x)
-
         x0, x1, x2, x3, x4 = features
 
         # Decoder
@@ -105,7 +105,6 @@ class UNet(nn.Module):
 
         logits = self.outc(decoder_feature)
 
-        # Safety for odd image sizes
         if logits.shape[-2:] != input_size:
             logits = F.interpolate(
                 logits,
@@ -125,3 +124,9 @@ class UNet(nn.Module):
             }
 
         return logits
+
+    def freeze_encoder(self):
+        self.encoder.freeze()
+
+    def unfreeze_encoder(self):
+        self.encoder.unfreeze()

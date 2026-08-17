@@ -13,6 +13,12 @@ from torchvision.models import (
 
 
 class ResNetEncoder(nn.Module):
+    """
+    ResNet encoder backbone.
+    Supports resnet18, resnet34, resnet50, resnet101.
+    Returns 5 feature maps: [x0, x1, x2, x3, x4] with channels = out_channels.
+    """
+
     def __init__(self, backbone="resnet34", pretrained=True):
         super().__init__()
 
@@ -57,10 +63,20 @@ class ResNetEncoder(nn.Module):
         self.layer4 = model.layer4
 
     def forward(self, x):
-        x0 = self.relu(self.bn1(self.conv1(x)))
-        x = self.maxpool(x0)
-        x1 = self.layer1(x)
-        x2 = self.layer2(x1)
-        x3 = self.layer3(x2)
-        x4 = self.layer4(x3)
+        x0 = self.relu(self.bn1(self.conv1(x)))  # H/2,  C = out_channels[0]
+        x = self.maxpool(x0)  # H/4
+        x1 = self.layer1(x)  # H/4,  C = out_channels[1]
+        x2 = self.layer2(x1)  # H/8,  C = out_channels[2]
+        x3 = self.layer3(x2)  # H/16, C = out_channels[3]
+        x4 = self.layer4(x3)  # H/32, C = out_channels[4]
         return [x0, x1, x2, x3, x4]
+
+    def freeze(self):
+        """Freeze all encoder parameters to avoid training them."""
+        for p in self.parameters():
+            p.requires_grad = False
+
+    def unfreeze(self):
+        """Unfreeze all encoder parameters for fine-tuning."""
+        for p in self.parameters():
+            p.requires_grad = True

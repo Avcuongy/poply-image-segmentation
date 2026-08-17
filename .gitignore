@@ -232,3 +232,8 @@ data/
 *.duckdb.wal
 *.sqlite3
 *.cache*.sqlite
+
+# checkpoints
+checkpoints/
+docs/
+checkpoints/*.pth

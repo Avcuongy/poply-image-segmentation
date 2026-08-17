@@ -38,8 +38,7 @@ class DoubleConv(nn.Module):
 
 class Up(nn.Module):
     """
-    Upsample decoder feature, concatenate encoder skip,
-    then apply DoubleConv.
+    Upsample decoder feature, concat encoder skip, rồi DoubleConv.
     """
 
     def __init__(
@@ -64,7 +63,6 @@ class Up(nn.Module):
                     kernel_size=1,
                 ),
             )
-
             up_channels = out_channels
 
         else:
@@ -74,7 +72,6 @@ class Up(nn.Module):
                 kernel_size=2,
                 stride=2,
             )
-
             up_channels = out_channels
 
         self.conv = DoubleConv(
