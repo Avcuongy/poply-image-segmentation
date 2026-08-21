@@ -6,25 +6,15 @@ import sys
 from utils.logger import get_logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = PROJECT_ROOT / "data"
 LOGS_DIR = PROJECT_ROOT / "logs"
 LOGS_FILE = [
     "config.log",
 ]
-DATA_SUBFOLDERS = [
-    # completed layer
-    "completed/db",
-    "completed/ohlcs",
-]
+DATA_DIR = PROJECT_ROOT / "data"
+CHECKPOINTS_DIR = PROJECT_ROOT / "checkpoints"
+MODELS_DIR = PROJECT_ROOT / "models"
 
 logger = get_logger(__name__, "config")
-
-
-def _ensure_data_folders() -> None:
-    DATA_ROOT.mkdir(exist_ok=True)
-    for relative in DATA_SUBFOLDERS:
-        folder = DATA_ROOT / relative
-        folder.mkdir(parents=True, exist_ok=True)
 
 
 def _ensure_logs_folder() -> None:
@@ -35,11 +25,25 @@ def _ensure_logs_folder() -> None:
             log_path.touch()
 
 
+def _ensure_data_folder() -> None:
+    DATA_DIR.mkdir(exist_ok=True)
+
+
+def _ensure_checkpoints_folder() -> None:
+    CHECKPOINTS_DIR.mkdir(exist_ok=True)
+
+
+def _ensure_models_folder() -> None:
+    MODELS_DIR.mkdir(exist_ok=True)
+
+
 def setup_folder() -> None:
-    logger.info("[Config] Setup data folders at %s", DATA_ROOT)
-    _ensure_data_folders()
-    logger.info("[Config] Setup logs folder at %s", LOGS_DIR)
+    logger.info("[Config] Setup project folders")
     _ensure_logs_folder()
+    _ensure_data_folder()
+    _ensure_checkpoints_folder()
+    _ensure_models_folder()
+    logger.info("[Config] Setup project folders is complete")
 
 
 if __name__ == "__main__":

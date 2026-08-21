@@ -234,6 +234,6 @@ data/
 *.cache*.sqlite
 
 # checkpoints
-checkpoints/
 docs/
-checkpoints/*.pth
+checkpoints/
+models/
