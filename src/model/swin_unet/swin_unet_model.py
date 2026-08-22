@@ -74,7 +74,6 @@ class PatchExpand(nn.Module):
 
         x = x.view(B, H, W, C)
 
-        # Equivalent to pixel shuffle in token/channel layout.
         x = x.view(
             B,
             H,
@@ -327,9 +326,7 @@ class SwinUNet(nn.Module):
         self.window_size = window_size
         self.num_layers = len(depths)
 
-        # ---------------------------------------------------------
         # Encoder: Microsoft Swin Transformer-compatible backbone
-        # ---------------------------------------------------------
         self.encoder = SwinTransformerBackbone(
             img_size=img_size,
             patch_size=patch_size,
@@ -362,9 +359,7 @@ class SwinUNet(nn.Module):
             )
         ]
 
-        # ---------------------------------------------------------
         # Decoder
-        # ---------------------------------------------------------
         self.layers_up = nn.ModuleList()
         self.concat_back_dim = nn.ModuleList()
 
@@ -451,8 +446,7 @@ class SwinUNet(nn.Module):
     def _init_decoder_weights(
         module: nn.Module,
     ) -> None:
-        # Encoder initializes itself. Reinitializing it with the same rule
-        # is harmless before loading pretrained weights.
+        # Encoder initializes itself. Reinitializing it with the same rule is harmless before loading pretrained weights.
         try:
             from timm.layers import trunc_normal_
         except ImportError:
@@ -602,7 +596,7 @@ class SwinUNet(nn.Module):
         pretraining strategy.
         """
 
-        # 1) Load exact Microsoft-compatible keys into the encoder.
+        # Load exact Microsoft-compatible keys into the encoder.
         encoder_msg = self.encoder.load_pretrained(
             checkpoint_path,
             strict=False,
@@ -611,7 +605,7 @@ class SwinUNet(nn.Module):
         if not load_decoder:
             return encoder_msg
 
-        # 2) Read checkpoint again to initialize compatible decoder blocks.
+        # Read checkpoint again to initialize compatible decoder blocks.
         checkpoint_data = torch.load(
             checkpoint_path,
             map_location="cpu",
