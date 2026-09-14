@@ -1,5 +1,5 @@
 """
-Swin-Unet model using a Swin Transformer encoder backbone.
+Swin-Unet model using a Swin Transformer V2 encoder and decoder.
 
 Architecture adapted from the official Swin-Unet implementation:
 https://github.com/HuCaoFighting/Swin-Unet
@@ -7,18 +7,17 @@ https://github.com/HuCaoFighting/Swin-Unet
 Encoder / pretrained weights:
 https://github.com/microsoft/Swin-Transformer
 
-The default model is Swin-Unet with a Swin-T encoder:
-    img_size = 224
+The default model is Swin-Unet with a SwinV2-T ImageNet-1K encoder:
+    img_size = 256
     patch_size = 4
     embed_dim = 96
     depths = (2, 2, 6, 2)
     num_heads = (3, 6, 12, 24)
-    window_size = 7
+    window_size = 8
 """
 
 from __future__ import annotations
 
-import copy
 from typing import Sequence, Tuple
 
 import torch
@@ -190,7 +189,7 @@ class FinalPatchExpandX4(nn.Module):
 
 
 class BasicLayerUp(nn.Module):
-    """One Swin Transformer decoder stage followed optionally by PatchExpand."""
+    """One Swin Transformer V2 decoder stage and optional PatchExpand."""
 
     def __init__(
         self,
@@ -201,13 +200,13 @@ class BasicLayerUp(nn.Module):
         window_size: int,
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
-        qk_scale: float | None = None,
         drop: float = 0.0,
         attn_drop: float = 0.0,
         drop_path: float | Sequence[float] = 0.0,
         norm_layer=nn.LayerNorm,
         upsample=None,
         use_checkpoint: bool = False,
+        pretrained_window_size: int = 0,
     ):
         super().__init__()
 
@@ -228,11 +227,11 @@ class BasicLayerUp(nn.Module):
                     shift_size=(0 if i % 2 == 0 else window_size // 2),
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
-                    qk_scale=qk_scale,
                     drop=drop,
                     attn_drop=attn_drop,
                     drop_path=drop_path_values[i],
                     norm_layer=norm_layer,
+                    pretrained_window_size=pretrained_window_size,
                 )
                 for i in range(depth)
             ]
@@ -267,23 +266,31 @@ class BasicLayerUp(nn.Module):
 
         return x
 
+    def init_respostnorm(self) -> None:
+        """Zero-init residual post-norm layers as in the official V2 model."""
+        for block in self.blocks:
+            nn.init.constant_(block.norm1.bias, 0)
+            nn.init.constant_(block.norm1.weight, 0)
+            nn.init.constant_(block.norm2.bias, 0)
+            nn.init.constant_(block.norm2.weight, 0)
+
 
 class SwinUNet(nn.Module):
     """
     Swin-Unet with a configurable Swin encoder.
 
-    Defaults match Swin-T + 3-class semantic segmentation.
+    Defaults match SwinV2-T ImageNet-1K + 3-class semantic segmentation.
 
     Args:
         img_size:
-            Fixed model input size. Official Swin-Unet commonly uses 224.
+            Fixed model input size. SwinV2-T ImageNet-1K uses 256.
 
         num_classes:
             Segmentation classes. Use 3 for:
             background, non-neoplastic, neoplastic.
 
         pretrained_path:
-            Optional Microsoft Swin-T ImageNet-1K checkpoint path.
+            Optional Microsoft SwinV2-T ImageNet-1K checkpoint path.
 
         pretrained_decoder:
             If True, encoder stage weights are mirrored into compatible
@@ -293,17 +300,16 @@ class SwinUNet(nn.Module):
 
     def __init__(
         self,
-        img_size: int = 224,
+        img_size: int = 256,
         patch_size: int = 4,
         in_channels: int = 3,
         num_classes: int = 3,
         embed_dim: int = 96,
         depths: Sequence[int] = (2, 2, 6, 2),
         num_heads: Sequence[int] = (3, 6, 12, 24),
-        window_size: int = 7,
+        window_size: int = 8,
         mlp_ratio: float = 4.0,
         qkv_bias: bool = True,
-        qk_scale: float | None = None,
         drop_rate: float = 0.0,
         attn_drop_rate: float = 0.0,
         drop_path_rate: float = 0.2,
@@ -313,6 +319,7 @@ class SwinUNet(nn.Module):
         use_checkpoint: bool = False,
         pretrained_path: str | None = None,
         pretrained_decoder: bool = True,
+        pretrained_window_sizes: Sequence[int] = (0, 0, 0, 0),
     ):
         super().__init__()
 
@@ -325,8 +332,9 @@ class SwinUNet(nn.Module):
         self.num_heads = tuple(num_heads)
         self.window_size = window_size
         self.num_layers = len(depths)
+        self.pretrained_window_sizes = tuple(pretrained_window_sizes)
 
-        # Encoder: Microsoft Swin Transformer-compatible backbone
+        # Encoder: Microsoft Swin Transformer V2-compatible backbone.
         self.encoder = SwinTransformerBackbone(
             img_size=img_size,
             patch_size=patch_size,
@@ -337,7 +345,6 @@ class SwinUNet(nn.Module):
             window_size=window_size,
             mlp_ratio=mlp_ratio,
             qkv_bias=qkv_bias,
-            qk_scale=qk_scale,
             drop_rate=drop_rate,
             attn_drop_rate=attn_drop_rate,
             drop_path_rate=drop_path_rate,
@@ -345,6 +352,7 @@ class SwinUNet(nn.Module):
             ape=ape,
             patch_norm=patch_norm,
             use_checkpoint=use_checkpoint,
+            pretrained_window_sizes=pretrained_window_sizes,
         )
 
         patches_resolution = self.encoder.patches_resolution
@@ -406,7 +414,6 @@ class SwinUNet(nn.Module):
                         window_size=window_size,
                         mlp_ratio=mlp_ratio,
                         qkv_bias=qkv_bias,
-                        qk_scale=qk_scale,
                         drop=drop_rate,
                         attn_drop=attn_drop_rate,
                         drop_path=stage_dpr,
@@ -415,6 +422,7 @@ class SwinUNet(nn.Module):
                             PatchExpand if i_layer < self.num_layers - 1 else None
                         ),
                         use_checkpoint=use_checkpoint,
+                        pretrained_window_size=pretrained_window_sizes[encoder_stage],
                     )
                 )
 
@@ -434,7 +442,18 @@ class SwinUNet(nn.Module):
             bias=False,
         )
 
-        self.apply(self._init_decoder_weights)
+        # Keep the encoder's zero-initialized residual post-norm parameters.
+        for module in (
+            self.layers_up,
+            self.concat_back_dim,
+            self.norm_up,
+            self.final_up,
+            self.segmentation_head,
+        ):
+            module.apply(self._init_decoder_weights)
+        for layer_up in self.layers_up:
+            if isinstance(layer_up, BasicLayerUp):
+                layer_up.init_respostnorm()
 
         if pretrained_path is not None:
             self.load_pretrained(
@@ -446,7 +465,6 @@ class SwinUNet(nn.Module):
     def _init_decoder_weights(
         module: nn.Module,
     ) -> None:
-        # Encoder initializes itself. Reinitializing it with the same rule is harmless before loading pretrained weights.
         try:
             from timm.layers import trunc_normal_
         except ImportError:
@@ -589,14 +607,14 @@ class SwinUNet(nn.Module):
         load_decoder: bool = True,
     ):
         """
-        Load Microsoft Swin checkpoint into encoder.
+        Load an official Microsoft SwinV2 checkpoint into the encoder.
 
         If load_decoder=True, compatible encoder Swin block weights are
         mirrored into decoder stages, following the official Swin-Unet
         pretraining strategy.
         """
 
-        # Load exact Microsoft-compatible keys into the encoder.
+        # Load exact Microsoft-compatible V2 keys into the encoder.
         encoder_msg = self.encoder.load_pretrained(
             checkpoint_path,
             strict=False,
@@ -626,6 +644,16 @@ class SwinUNet(nn.Module):
                 key = key[len("backbone.") :]
 
             if key.startswith("head."):
+                continue
+
+            if any(
+                buffer_name in key
+                for buffer_name in (
+                    "relative_position_index",
+                    "relative_coords_table",
+                    "attn_mask",
+                )
+            ):
                 continue
 
             cleaned[key] = value
@@ -663,7 +691,9 @@ class SwinUNet(nn.Module):
             strict=False,
         )
 
-        print(f"[Swin-Unet decoder] Loaded " f"{len(decoder_state)} mirrored tensors.")
+        print(
+            f"[SwinV2-Unet decoder] Loaded " f"{len(decoder_state)} mirrored tensors."
+        )
 
         return {
             "encoder": encoder_msg,
