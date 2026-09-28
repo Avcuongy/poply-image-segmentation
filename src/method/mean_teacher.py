@@ -1,0 +1,76 @@
+import copy
+import math
+
+import torch
+from torch import nn
+
+
+def create_teacher(student):
+    teacher = copy.deepcopy(student)
+    teacher.requires_grad_(False)
+    teacher.train()
+    return teacher
+
+
+@torch.no_grad()
+def update_ema_teacher(student, teacher, ema_decay, global_step):
+    """Call after optimizer.step(), with the incremented global step."""
+    if not 0 <= ema_decay < 1:
+        raise ValueError("ema_decay must be in [0, 1).")
+    if global_step < 0:
+        raise ValueError("global_step must be nonnegative.")
+    effective_decay = min(float(ema_decay), 1.0 - 1.0 / (float(global_step) + 1.0))
+    student_parameters = dict(student.named_parameters())
+    teacher_parameters = dict(teacher.named_parameters())
+    if student_parameters.keys() != teacher_parameters.keys():
+        raise RuntimeError("Student and Teacher parameter structures do not match.")
+    for name, teacher_parameter in teacher_parameters.items():
+        teacher_parameter.mul_(effective_decay).add_(
+            student_parameters[name], alpha=1.0 - effective_decay
+        )
+
+
+def sigmoid_rampup(current, rampup_length):
+    rampup_length = float(rampup_length)
+    if rampup_length < 0:
+        raise ValueError("rampup_length must be nonnegative.")
+    if rampup_length == 0:
+        return 1.0
+    current = min(max(float(current), 0.0), rampup_length)
+    return math.exp(-5.0 * (1.0 - current / rampup_length) ** 2)
+
+
+def get_consistency_weight(epoch, mt_config):
+    return float(mt_config["max_consistency_weight"]) * sigmoid_rampup(
+        max(epoch - 1, 0), int(mt_config["consistency_rampup_epochs"])
+    )
+
+
+class MeanTeacher(nn.Module):
+    """Wrap either UNet or SwinUNet without changing its architecture.
+
+    Optimize ``method.student.parameters()``. Pass aligned strong/weak views
+    to forward, combine the existing supervised loss with softmax-MSE, then
+    call ``update_teacher(global_step)`` after each optimizer step. Both
+    labeled and unlabeled examples can be concatenated in these views.
+    For inference, use ``method.teacher.eval()(images)``.
+
+    The standalone helpers retain the existing notebooks' function API.
+    """
+
+    def __init__(self, student, ema_decay=0.999):
+        super().__init__()
+        if not 0 <= ema_decay < 1:
+            raise ValueError("ema_decay must be in [0, 1).")
+        self.student = student
+        self.teacher = create_teacher(student)
+        self.ema_decay = float(ema_decay)
+
+    def forward(self, strong_images, weak_images):
+        student_logits = self.student(strong_images)
+        with torch.no_grad():
+            teacher_logits = self.teacher(weak_images)
+        return student_logits, teacher_logits
+
+    def update_teacher(self, global_step):
+        update_ema_teacher(self.student, self.teacher, self.ema_decay, global_step)

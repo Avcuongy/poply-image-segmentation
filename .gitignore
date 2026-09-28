@@ -220,7 +220,7 @@ __marimo__/
 
 # test
 *test.*
-test/
+*test*/
 
 # data
 data/
@@ -237,3 +237,4 @@ data/
 docs/
 checkpoints/
 models/
+tools/
