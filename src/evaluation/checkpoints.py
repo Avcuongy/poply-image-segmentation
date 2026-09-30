@@ -63,9 +63,12 @@ def clean_state_dict(state):
     return state
 
 
-def select_model_weights(checkpoint, mean_teacher=False):
-    """Prefer best Teacher, never silently fall back to Student."""
-    for key in ("best_teacher_state_dict", "teacher_state_dict"):
+def select_model_weights(checkpoint, mean_teacher=False, mean_teacher_state="teacher"):
+    """Load the requested MT branch, preferring its best saved weights."""
+    if mean_teacher_state not in ("student", "teacher"):
+        raise ValueError("mean_teacher_state must be 'student' or 'teacher'.")
+    branch = mean_teacher_state if mean_teacher else "teacher"
+    for key in (f"best_{branch}_state_dict", f"{branch}_state_dict"):
         if is_raw_state_dict(checkpoint.get(key)):
             return clean_state_dict(checkpoint[key]), key, True
 
@@ -82,25 +85,28 @@ def select_model_weights(checkpoint, mean_teacher=False):
     has_mt_metadata = (
         "mean_teacher" in str(checkpoint.get("training_method", ""))
         or any(key in checkpoint for key in (
-            "student_state_dict", "teacher_state_dict", "best_teacher_state_dict"
+            "student_state_dict", "teacher_state_dict",
+            "best_student_state_dict", "best_teacher_state_dict"
         ))
     )
     for key, state in containers:
         if not is_raw_state_dict(state):
             continue
         state = clean_state_dict(state)
-        teacher_state = {
-            name[len("teacher."):]: tensor
-            for name, tensor in state.items() if name.startswith("teacher.")
+        branch_state = {
+            name[len(branch) + 1:]: tensor
+            for name, tensor in state.items() if name.startswith(f"{branch}.")
         }
-        if teacher_state:
-            return clean_state_dict(teacher_state), f"{key}:teacher", True
-        if has_mt_metadata or any(name.startswith("student.") for name in state):
+        if branch_state:
+            return clean_state_dict(branch_state), f"{key}:{branch}", True
+        if has_mt_metadata or any(
+            name.startswith(("student.", "teacher.")) for name in state
+        ):
             continue
-        # A separately exported Teacher is indistinguishable from a baseline
-        # state_dict; the explicit dictionary group supplies its provenance.
+        # A separately exported branch has no role metadata; the caller
+        # supplies its provenance through the group and selected branch.
         return state, key, bool(mean_teacher)
-    raise KeyError("No usable weights found. Mean Teacher requires Teacher weights.")
+    raise KeyError(f"No usable weights found. Mean Teacher requires {branch} weights.")
 
 
 def detect_architecture(state):
@@ -154,7 +160,8 @@ def build_and_load_model(checkpoint_path, model_type, eval_config):
         raise ValueError(f"Unknown model type: {model_type}")
     checkpoint = load_checkpoint_file(checkpoint_path)
     state, weight_key, is_mt = select_model_weights(
-        checkpoint, mean_teacher=model_type.startswith("mean_teacher_")
+        checkpoint, mean_teacher=model_type.startswith("mean_teacher_"),
+        mean_teacher_state=eval_config.get("mean_teacher_state", "teacher"),
     )
     architecture = detect_architecture(state)
     expected = model_type.removeprefix("mean_teacher_")
@@ -185,6 +192,7 @@ def build_and_load_model(checkpoint_path, model_type, eval_config):
     detected_type = f"mean_teacher_{architecture}" if is_mt else architecture
     info = {
         "model_type": detected_type, "weights": weight_key,
+        "mean_teacher_state": eval_config.get("mean_teacher_state", "teacher") if is_mt else None,
         "best_epoch": checkpoint.get("best_epoch"),
         "checkpoint_path": str(checkpoint_path),
     }
