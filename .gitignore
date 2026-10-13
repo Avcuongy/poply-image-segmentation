@@ -238,3 +238,5 @@ docs/
 checkpoints/
 models/
 tools/
+output/
+tmp/
