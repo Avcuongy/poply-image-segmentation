@@ -16,3 +16,4 @@ tqdm==4.70.0
 timm==1.0.28
 opencv-python==5.0.0.93
 albumentations==2.0.8
+kagglehub==1.0.2

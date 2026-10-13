@@ -8,12 +8,19 @@ class GeneralizedDiceLoss(nn.Module):
 
     def __init__(self, num_classes=3, smooth=1e-6, ignore_index=None):
         super().__init__()
+        if num_classes < 2 or smooth <= 0:
+            raise ValueError("num_classes must be >= 2 and smooth must be positive.")
         self.num_classes = num_classes
         self.smooth = smooth
         self.ignore_index = ignore_index
 
     def forward(self, logits, targets):
-        probabilities = torch.softmax(logits, dim=1)
+        if logits.ndim != 4 or logits.shape[1] != self.num_classes:
+            raise ValueError("Expected logits [B, num_classes, H, W].")
+        if targets.shape != (logits.shape[0], *logits.shape[2:]):
+            raise ValueError("Expected targets [B, H, W] matching logits.")
+        # Accumulate in FP32, including under autocast on large masks.
+        probabilities = torch.softmax(logits.float(), dim=1)
 
         if self.ignore_index is not None:
             valid_mask = targets != self.ignore_index

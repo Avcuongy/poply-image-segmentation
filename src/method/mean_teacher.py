@@ -6,7 +6,15 @@ from torch import nn
 
 
 def create_teacher(student):
-    teacher = copy.deepcopy(student)
+    memo = {}
+    for name in ("projection_head", "contrastive_memory"):
+        value = getattr(student, name, None)
+        if value is not None:
+            memo[id(value)] = None
+    teacher = copy.deepcopy(student, memo)
+    for name in ("projection_head", "contrastive_memory"):
+        if hasattr(teacher, name):
+            delattr(teacher, name)
     teacher.requires_grad_(False)
     teacher.train()
     return teacher
@@ -22,7 +30,10 @@ def update_ema_teacher(student, teacher, ema_decay, global_step):
     effective_decay = min(float(ema_decay), 1.0 - 1.0 / (float(global_step) + 1.0))
     student_parameters = dict(student.named_parameters())
     teacher_parameters = dict(teacher.named_parameters())
-    if student_parameters.keys() != teacher_parameters.keys():
+    segmentation_names = {
+        name for name in student_parameters if not name.startswith("projection_head.")
+    }
+    if segmentation_names != teacher_parameters.keys():
         raise RuntimeError("Student and Teacher parameter structures do not match.")
     for name, teacher_parameter in teacher_parameters.items():
         teacher_parameter.mul_(effective_decay).add_(
@@ -47,17 +58,6 @@ def get_consistency_weight(epoch, mt_config):
 
 
 class MeanTeacher(nn.Module):
-    """Wrap either UNet or SwinUNet without changing its architecture.
-
-    Optimize ``method.student.parameters()``. Pass aligned strong/weak views
-    to forward, combine the existing supervised loss with softmax-MSE, then
-    call ``update_teacher(global_step)`` after each optimizer step. Both
-    labeled and unlabeled examples can be concatenated in these views.
-    For inference, use ``method.teacher.eval()(images)``.
-
-    The standalone helpers retain the existing notebooks' function API.
-    """
-
     def __init__(self, student, ema_decay=0.999):
         super().__init__()
         if not 0 <= ema_decay < 1:

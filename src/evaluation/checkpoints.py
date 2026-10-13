@@ -1,5 +1,3 @@
-"""Load baseline and Mean Teacher segmentation checkpoints for evaluation."""
-
 from pathlib import Path
 
 import torch
@@ -49,7 +47,9 @@ def load_checkpoint_file(checkpoint_path, map_location="cpu"):
 
 def is_raw_state_dict(value):
     return (isinstance(value, dict) and bool(value)
-            and all(torch.is_tensor(item) for item in value.values()))
+            and any(torch.is_tensor(item) for item in value.values())
+            and all(torch.is_tensor(item) or key.endswith("_extra_state")
+                    for key, item in value.items()))
 
 
 def clean_state_dict(state):
@@ -136,8 +136,10 @@ def resolve_model_config(checkpoint, state, architecture, eval_config):
         raise ValueError("Checkpoint num_classes does not match its output weights.")
     config["num_classes"] = num_classes
     if architecture == "unet":
-        inferred_backbone = (
-            "resnet50" if "encoder.layer1.0.conv3.weight" in state else "resnet34"
+        stage3_blocks = {key.split(".")[2] for key in state if key.startswith("encoder.layer3.")}
+        bottleneck = "encoder.layer1.0.conv3.weight" in state
+        inferred_backbone = ("resnet101" if len(stage3_blocks) == 23 else "resnet50") if bottleneck else (
+            "resnet18" if len(stage3_blocks) == 2 else "resnet34"
         )
         config["backbone"] = saved.get("backbone", inferred_backbone)
         config["bilinear"] = saved.get("bilinear", "up4.up.1.weight" in state)
@@ -170,6 +172,11 @@ def build_and_load_model(checkpoint_path, model_type, eval_config):
             f"{checkpoint_path}: detected {architecture}, but placed in {model_type}."
         )
     config = resolve_model_config(checkpoint, state, architecture, eval_config)
+    # Projection weights train the contrastive objective only. The segmentation
+    # weights below still require a strict, complete architecture match.
+    projection_keys = [key for key in state if key.startswith("projection_head.")]
+    state = {key: value for key, value in state.items()
+             if key not in projection_keys and not key.endswith("_extra_state")}
     if architecture == "unet":
         from model.unet import UNet
 
@@ -195,6 +202,7 @@ def build_and_load_model(checkpoint_path, model_type, eval_config):
         "mean_teacher_state": eval_config.get("mean_teacher_state", "teacher") if is_mt else None,
         "best_epoch": checkpoint.get("best_epoch"),
         "checkpoint_path": str(checkpoint_path),
+        "ignored_projection_keys": projection_keys,
     }
     print(f"[{detected_type}] {checkpoint_path} | weights={weight_key} | strict load OK")
     return model, config, info

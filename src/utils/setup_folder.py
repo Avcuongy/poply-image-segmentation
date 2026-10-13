@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-import logging
-import sys
-from utils.logger import get_logger
+from .logger import get_logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOGS_DIR = PROJECT_ROOT / "logs"
 LOGS_FILE = [
     "config.log",
+    "data.log",
 ]
 DATA_DIR = PROJECT_ROOT / "data"
 CHECKPOINTS_DIR = PROJECT_ROOT / "checkpoints"
@@ -27,6 +26,8 @@ def _ensure_logs_folder() -> None:
 
 def _ensure_data_folder() -> None:
     DATA_DIR.mkdir(exist_ok=True)
+    (DATA_DIR / "log").mkdir(exist_ok=True)
+    (DATA_DIR / "log" / "dataloaders.log").touch(exist_ok=True)
 
 
 def _ensure_checkpoints_folder() -> None:

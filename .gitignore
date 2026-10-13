@@ -224,6 +224,8 @@ __marimo__/
 
 # data
 data/
+!src/data/
+!src/data/*.py
 *.csv
 *.json
 *.parquet
@@ -240,3 +242,4 @@ models/
 tools/
 output/
 tmp/
+qa/

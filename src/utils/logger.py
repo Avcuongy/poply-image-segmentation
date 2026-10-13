@@ -2,17 +2,17 @@ from pathlib import Path
 import sys
 import logging
 
-PROJECT_ROOT = PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_FILES = {
     "config": LOG_DIR / "config.log",
-    "backend": LOG_DIR / "backend.log",
-    "elt": LOG_DIR / "elt.log",
+    "data": LOG_DIR / "data.log",
 }
 
 
 def get_logger(name: str, log_group: str):
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOG_FILES[log_group]
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(name)
 
@@ -24,7 +24,7 @@ def get_logger(name: str, log_group: str):
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
     file_handler = logging.FileHandler(
-        LOG_FILES[log_group],
+        log_path,
         mode="a",
         encoding="utf-8",
     )
