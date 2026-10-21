@@ -6,4 +6,3 @@ from .mean_teacher import (
     update_ema_teacher,
 )
 from .mean_teacher_infonce import MeanTeacherInfoNCE
-from .training import train_supervised_one_epoch, train_mean_teacher_one_epoch
