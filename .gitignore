@@ -240,6 +240,6 @@ docs/
 checkpoints/
 models/
 tools/
-output/
+*output*/
 tmp/
 qa/
